@@ -1,0 +1,18 @@
+name: offline_sync_engine
+description: >
+  Generic offline-queue sync engine for Flutter/Dart apps: single-flight
+  orchestration, transient-vs-permanent error classification, pluggable
+  storage adapters. Pure Dart, no Flutter dependency — bring your own
+  storage (Hive, sqflite, ...) and HTTP client.
+version: 0.1.0
+homepage: https://github.com/TODO-your-org/offline_sync_engine
+repository: https://github.com/TODO-your-org/offline_sync_engine
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+
+dependencies:
+  # none — deliberately pure Dart so it has zero Flutter/UI coupling and
+  # can be unit tested without a widget test harness.
+
+dev_dependencies:
+  test: ^1.24.0
