@@ -4,7 +4,7 @@ description: >
   orchestration, transient-vs-permanent error classification, pluggable
   storage adapters. Pure Dart, no Flutter dependency — bring your own
   storage (Hive, sqflite, ...) and HTTP client.
-version: 0.1.0
+version: 0.2.0
 homepage: https://github.com/TODO-your-org/offline_sync_engine
 repository: https://github.com/TODO-your-org/offline_sync_engine
 environment:

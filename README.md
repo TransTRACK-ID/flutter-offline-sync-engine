@@ -37,6 +37,20 @@ dependencies:
   instead of racing each other. Also `isSyncing`/`syncStateChanges` for
   driving a loading indicator
 
+## Inbound (pull-cache) primitives
+For the opposite direction — server data mirrored into local storage for
+offline viewing, rather than local writes queued to push out — the kit
+also ships three small, independent, pure-Dart mechanics meant to be
+composed directly in a pull-cache repository (there's no shared "pass"
+loop for this direction, since fetch+merge shapes differ per domain; see
+[doc/INBOUND_GUIDE.md](doc/INBOUND_GUIDE.md) for why):
+- `GenerationGuard` — staleness token so a pull that's been superseded (by
+  a newer pull, or a logout) doesn't clobber the cache with stale data
+- `KeyedSingleFlight<K>` — collapses concurrent pulls for the same key
+  (e.g. two screens reconciling the same record at once) into one run
+- `MutationQueue` — serializes local-storage writes so overlapping pulls
+  don't race each other
+
 ## What stays app-specific
 - Your actual domain models (a check-in event, a form submission, ...)
 - The storage adapter implementation per domain (thin — typically a
@@ -60,8 +74,10 @@ Keeping the engine domain-agnostic means:
   `lib/` references any specific app's models
 
 ## Docs
-- [doc/GUIDE.md](doc/GUIDE.md) — full implementation guide (storage
-  adapter, classifier, wiring, testing)
+- [doc/GUIDE.md](doc/GUIDE.md) — full implementation guide for outbound
+  (push-queue) sync: storage adapter, classifier, wiring, testing
+- [doc/INBOUND_GUIDE.md](doc/INBOUND_GUIDE.md) — guide for inbound
+  (pull-cache) sync: `GenerationGuard`, `KeyedSingleFlight`, `MutationQueue`
 - [doc/FRESH_PROJECT_WALKTHROUGH.md](doc/FRESH_PROJECT_WALKTHROUGH.md) —
   adding offline sync to a brand-new feature, no existing code assumed
 - [doc/MIGRATING_AN_EXISTING_APP.md](doc/MIGRATING_AN_EXISTING_APP.md) —
@@ -85,7 +101,10 @@ classifier decided on.
 ```
 dart test
 ```
-Tests use an in-memory fake store and don't touch Hive or any real storage.
+Outbound tests use an in-memory fake store and don't touch Hive or any
+real storage. Inbound primitive tests (`test/generation_guard_test.dart`,
+`test/keyed_single_flight_test.dart`, `test/mutation_queue_test.dart`)
+are pure unit tests with no storage dependency at all.
 
 ## What this kit does *not* attempt
 - Migrating your existing storage service itself — adapters wrap
