@@ -1,19 +1,19 @@
 # offline_sync_engine
 
-A generic offline-queue sync engine for Flutter/Dart apps: single-flight
-orchestration, transient-vs-permanent error classification, and pluggable
-storage adapters. Pure Dart, no Flutter dependency — bring your own
-storage (Hive, sqflite, ...) and HTTP client.
+Full offline-first toolkit for Flutter/Dart apps: **local-first repositories**
+(so screens work offline), push queues, pull caches, Hive/Drift storage
+adapters, multi-domain orchestration, and domain codegen.
+
+Pure Dart core — no Flutter import required for the engine itself.
 
 ## Status
-Working and unit-tested. Originally
-extracted from an internal app's `SyncRepository`; the engine itself has
-no dependency on that app or any other, so it can be pulled into any
-Flutter/Dart project as a git or path dependency.
+
+Working and unit-tested. v0.3 adds the full extension (read/cache layer +
+codegen). v0.2 sync primitives remain available unchanged.
 
 ## Install
-Not published to pub.dev. Depend on it directly from GitHub or a local
-path:
+
+Not published to pub.dev. Depend on GitHub or a local path:
 
 ```yaml
 dependencies:
@@ -21,96 +21,73 @@ dependencies:
     git:
       url: https://github.com/abidzakly/offline_sync_engine.git
       ref: main
+  hive: ^2.2.3              # Hive backend
+  hive_flutter: ^1.1.0      # Flutter + Hive
+  drift: ^2.22.1            # Drift backend (in your app)
 ```
 
-## What's in the kit (generic, pure Dart, no Flutter import)
-- `OfflineQueueStore<T, Id>` — storage adapter interface (Hive/sqflite/etc.
-  implement this; the engine never touches storage directly)
-- `SyncOutcome` / `SyncPassResult` / `SyncItemEvent` — domain-agnostic
-  result types, no UI copy
-- `SyncPass<T, Id>` — the loop itself: pending items → push one → classify
-  → success/transient/permanent. Also `retryOne(id)` for re-attempting a
-  single item on demand, and `onItemResult` — a live per-item event
-  stream, not just the aggregate result at the end
-- `SyncOrchestrator` — single-flight guard + running several `SyncPass`es
-  together, so overlapping "sync now" triggers collapse into one run
-  instead of racing each other. Also `isSyncing`/`syncStateChanges` for
-  driving a loading indicator
+## Quick start — screens that work offline
 
-## Inbound (pull-cache) primitives
-For the opposite direction — server data mirrored into local storage for
-offline viewing, rather than local writes queued to push out — the kit
-also ships three small, independent, pure-Dart mechanics meant to be
-composed directly in a pull-cache repository (there's no shared "pass"
-loop for this direction, since fetch+merge shapes differ per domain; see
-[doc/INBOUND_GUIDE.md](doc/INBOUND_GUIDE.md) for why):
-- `GenerationGuard` — staleness token so a pull that's been superseded (by
-  a newer pull, or a logout) doesn't clobber the cache with stale data
-- `KeyedSingleFlight<K>` — collapses concurrent pulls for the same key
-  (e.g. two screens reconciling the same record at once) into one run
-- `MutationQueue` — serializes local-storage writes so overlapping pulls
-  don't race each other
+```dart
+final repo = PullCacheRepository<Report, String>(
+  store: HiveLocalDataStore(
+    box: Hive.box<Report>('reports'),
+    idOf: (r) => r.id,
+  ),
+  fetchAll: () => api.fetchReports(),
+  isOnline: connectivity.hasInternet,
+);
 
-## What stays app-specific
-- Your actual domain models (a check-in event, a form submission, ...)
-- The storage adapter implementation per domain (thin — typically a
-  ~15-line wrapper around whatever storage you already have; see
-  [doc/GUIDE.md](doc/GUIDE.md) for a worked example)
-- The `pushOne` classifier per domain (talks to your real API client)
-- Any domain policy beyond "transient/permanent" — e.g. "skip the rest of
-  this batch once one item fails" or "not found on server → delete the
-  offline copy." Those are business rules, not queue mechanics, and
-  belong in your classifier/wrapper, not the generic engine.
-- All UI/flash-message presentation and copy
+// Screen open — cached data immediately, refresh if online
+await repo.load(refreshIfOnline: true);
 
-## Why split it this way
-Keeping the engine domain-agnostic means:
-- it's unit-testable with fake stores/`pushOne` functions, no Hive/sqflite/
-  Flutter test harness needed
-- adding another offline domain is "write an adapter + classifier," not
-  "copy-paste a 150-line loop and hope you don't introduce the same bug
-  a third time"
-- it can be reused across multiple Flutter projects, since nothing in
-  `lib/` references any specific app's models
+// UI
+StreamBuilder<CacheSnapshot<Report>>(
+  stream: repo.watchSnapshot(),
+  builder: (_, snap) => ListView(...),
+);
+```
+
+**Add another domain without copy-paste:**
+
+```bash
+dart run offline_sync_engine:generate_domain --config offline_domain.yaml
+```
+
+## What's in the kit
+
+### Full extension (v0.3+)
+- `PullCacheRepository` — local-first reads, `watchSnapshot()`, guarded refresh
+- `OutboundRepository` — save locally, `watchAll()`, integrated `SyncPass`
+- `OfflineSyncKit` — register many domains; `loadAllForUi()`, `syncAllOutbound()`
+- `LocalDataStore` — read/write abstraction for UI + cache
+- `HiveLocalDataStore` / `HiveOutboundQueueStore` — Hive backend
+- `DriftLocalDataStore` / `DriftOutboundQueueStore` + adapter interfaces — Drift backend
+- `MemoryLocalDataStore` — tests and prototypes
+- `generate_domain` — CLI codegen for new domains
+
+### Sync engine (v0.2, unchanged)
+- `OfflineQueueStore`, `SyncPass`, `SyncOrchestrator`, `SyncOutcome`
+- `GenerationGuard`, `KeyedSingleFlight`, `MutationQueue`
 
 ## Docs
-- [doc/GUIDE.md](doc/GUIDE.md) — full implementation guide for outbound
-  (push-queue) sync: storage adapter, classifier, wiring, testing
-- [doc/INBOUND_GUIDE.md](doc/INBOUND_GUIDE.md) — guide for inbound
-  (pull-cache) sync: `GenerationGuard`, `KeyedSingleFlight`, `MutationQueue`
-- [doc/FRESH_PROJECT_WALKTHROUGH.md](doc/FRESH_PROJECT_WALKTHROUGH.md) —
-  adding offline sync to a brand-new feature, no existing code assumed
-- [doc/MIGRATING_AN_EXISTING_APP.md](doc/MIGRATING_AN_EXISTING_APP.md) —
-  moving an existing hand-rolled sync repository onto the kit
-  incrementally
 
-## Note on transient vs. permanent classification
-The engine has no opinion of its own on status codes — that judgment call
-belongs entirely to your `pushOne` classifier. The rule of thumb: ask "did
-the request reach the server?" Failure before/during the network call
-(timeout, DNS, connection refused, socket error) → transient. The server
-responded, even with an error status → permanent — with the judgment
-call that a bare `500` right after an offline→online transition is often
-treated as transient too, since it's frequently a cold-start/overload
-symptom rather than a deliberate rejection. See the doc comment on
-`SyncOutcomeKind.transientFailure` in `sync_outcome.dart` for the full
-reasoning. Either way, the engine just needs to know which bucket the
-classifier decided on.
+| Doc | Contents |
+|-----|----------|
+| **[doc/FULL_EXTENSION_GUIDE.md](doc/FULL_EXTENSION_GUIDE.md)** | **Start here** — repositories, backends, UI wiring, OfflineSyncKit |
+| [doc/CODEGEN_GUIDE.md](doc/CODEGEN_GUIDE.md) | `generate_domain` CLI and YAML config |
+| [doc/GUIDE.md](doc/GUIDE.md) | Outbound push-queue sync (classifiers, testing) |
+| [doc/INBOUND_GUIDE.md](doc/INBOUND_GUIDE.md) | Low-level inbound primitives (used inside PullCacheRepository) |
+| [doc/FRESH_PROJECT_WALKTHROUGH.md](doc/FRESH_PROJECT_WALKTHROUGH.md) | Brand-new app walkthrough |
+| [doc/MIGRATING_AN_EXISTING_APP.md](doc/MIGRATING_AN_EXISTING_APP.md) | Incremental migration |
 
 ## Testing
-```
+
+```bash
+dart pub get
 dart test
 ```
-Outbound tests use an in-memory fake store and don't touch Hive or any
-real storage. Inbound primitive tests (`test/generation_guard_test.dart`,
-`test/keyed_single_flight_test.dart`, `test/mutation_queue_test.dart`)
-are pure unit tests with no storage dependency at all.
 
-## What this kit does *not* attempt
-- Migrating your existing storage service itself — adapters wrap
-  whatever you already have (see `HiveOfflineQueueStore`)
-- The "am I online" reachability question — `SyncOrchestrator` just takes
-  `isOnline` as an injected function, so that decision is made by the
-  caller, not baked into the kit
-- Connectivity-change/polling triggers, retry UI, flash messages — those
-  are presentation-layer concerns and deliberately out of scope
+## Example codegen config
+
+See [example/list_transaction/offline_domain.yaml](example/list_transaction/offline_domain.yaml).

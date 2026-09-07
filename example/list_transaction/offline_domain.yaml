@@ -1,0 +1,13 @@
+# Example: generate list_transaction from an existing list_report setup.
+#
+# Run from your Flutter app root (with offline_sync_engine as a dependency):
+#   dart run offline_sync_engine:generate_domain --config example/list_transaction/offline_domain.yaml
+
+domain: list_transaction
+entity: ListTransaction
+id_type: String
+storage: hive
+sync: pull
+hive_box: list_transactions
+sort_field: createdAt
+output_dir: lib/offline/list_transaction

@@ -1,5 +1,11 @@
 # Implementation Guide
 
+> **v0.3+:** For local-first repositories (offline screens), Hive/Drift
+> backends, multi-domain wiring, and domain codegen, start with
+> **[FULL_EXTENSION_GUIDE.md](FULL_EXTENSION_GUIDE.md)**. This guide covers
+> the outbound push-queue layer (`SyncPass`, classifiers, testing) that
+> underpins both the classic sync-only path and the full extension.
+
 How to wire the kit into an app — either a fresh feature or replacing an
 existing hand-rolled sync loop. If you're starting from nothing, the
 [fresh project walkthrough](FRESH_PROJECT_WALKTHROUGH.md) is a gentler
